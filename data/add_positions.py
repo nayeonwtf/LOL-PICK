@@ -2,31 +2,22 @@
 from pathlib import Path
 from io import StringIO
 import re
-import time
 
 import pandas as pd
 import requests
 
 
 # ==========================================
-# 기본 설정
+# 파일 위치
 # ==========================================
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 CSV_FILE = PROJECT_DIR / "champions.csv"
 
-WIKI_URL = (
-    "https://wiki.leagueoflegends.com/"
-    "en-us/List_of_champions_by_draft_position"
+GIST_API_URL = (
+    "https://api.github.com/gists/"
+    "4dcc62d4dc444d7f71c50f78bacfbf71"
 )
-
-POSITION_COLUMNS = {
-    "top": "탑",
-    "jungle": "정글",
-    "middle": "미드",
-    "bottom": "원딜",
-    "support": "서포터",
-}
 
 
 # ==========================================
@@ -42,144 +33,91 @@ def normalize(value):
 
 
 # ==========================================
-# 위키 데이터 가져오기
+# 외부 포지션 데이터 가져오기
 # ==========================================
 
-def get_wiki_tables():
+def get_position_data():
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept": (
-            "text/html,application/xhtml+xml,"
-            "application/xml;q=0.9,*/*;q=0.8"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.google.com/",
-    }
-
-    print("위키 페이지 접속 중...")
+    print("공개 챔피언 데이터 접속 중...")
 
     response = requests.get(
-        WIKI_URL,
-        headers=headers,
+        GIST_API_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "LOL-PICK"
+        },
         timeout=30
     )
 
     response.raise_for_status()
 
-    print("위키 페이지 접속 성공!")
+    gist = response.json()
 
-    return pd.read_html(StringIO(response.text))
+    csv_file = None
 
+    for filename, info in gist["files"].items():
 
-# ==========================================
-# 포지션 표 찾기
-# ==========================================
+        if "champions.csv" in filename.lower():
+            csv_file = info
+            break
 
-def find_role_table(tables):
-
-    for table in tables:
-
-        columns = []
-
-        for col in table.columns:
-
-            if isinstance(col, tuple):
-                name = " ".join(map(str, col))
-            else:
-                name = str(col)
-
-            columns.append(name.lower())
-
-        table.columns = columns
-
-        all_columns = " ".join(columns)
-
-        if (
-            "champion" in all_columns
-            and "jungle" in all_columns
-            and "support" in all_columns
-        ):
-            print("챔피언 포지션 표 발견!")
-            return table
-
-    raise ValueError(
-        "위키에서 포지션 표를 찾지 못했습니다. "
-        "위키 표의 구조가 변경되었을 수 있습니다."
-    )
-
-
-# ==========================================
-# 열 이름 찾기
-# ==========================================
-
-def find_column(table, keyword):
-
-    for col in table.columns:
-
-        if keyword in str(col).lower():
-            return col
-
-    raise ValueError(
-        f"'{keyword}' 포지션 열을 찾지 못했습니다."
-    )
-
-
-# ==========================================
-# 포지션 데이터 정리
-# ==========================================
-
-def make_position_data(table):
-
-    champion_col = find_column(
-        table,
-        "champion"
-    )
-
-    position_cols = {}
-
-    for english, korean in POSITION_COLUMNS.items():
-
-        position_cols[english] = find_column(
-            table,
-            english
+    if csv_file is None:
+        raise ValueError(
+            "공개 데이터에서 champions.csv를 찾지 못했습니다."
         )
 
-    role_data = {}
+    content = csv_file.get("content")
 
-    for _, row in table.iterrows():
+    if not content:
+        raw_url = csv_file["raw_url"]
 
-        name = str(row[champion_col]).strip()
+        raw_response = requests.get(
+            raw_url,
+            headers={"User-Agent": "LOL-PICK"},
+            timeout=30
+        )
 
-        if not name or name.lower() == "nan":
-            continue
+        raw_response.raise_for_status()
+        content = raw_response.text
 
-        positions = []
+    data = pd.read_csv(
+        StringIO(content),
+        encoding="utf-8"
+    )
 
-        for english, korean in POSITION_COLUMNS.items():
+    print("공개 챔피언 데이터 가져오기 성공!")
 
-            value = str(
-                row[position_cols[english]]
-            ).lower()
-
-            if (
-                "yes" in value
-                or "3p" in value
-                or value.strip() == "true"
-            ):
-                positions.append(korean)
-
-        role_data[normalize(name)] = positions
-
-    return role_data
+    return data
 
 
 # ==========================================
-# CSV에 포지션 저장
+# 포지션 이름 변환
+# ==========================================
+
+POSITION_MAP = {
+    "top": "탑",
+    "jungle": "정글",
+    "middle": "미드",
+    "mid": "미드",
+    "bottom": "원딜",
+    "bot": "원딜",
+    "support": "서포터",
+}
+
+
+# ==========================================
+# 챔피언 이름 예외 처리
+# ==========================================
+
+ALIASES = {
+    "monkeyking": "wukong",
+    "nunu": "nunuandwillump",
+    "drmundo": "drmundo",
+}
+
+
+# ==========================================
+# 메인 실행
 # ==========================================
 
 def main():
@@ -188,7 +126,7 @@ def main():
 
     if not CSV_FILE.exists():
         raise FileNotFoundError(
-            "champions.csv 파일을 찾을 수 없습니다."
+            "champions.csv 파일이 없습니다."
         )
 
     champions = pd.read_csv(
@@ -196,17 +134,42 @@ def main():
         encoding="utf-8-sig"
     )
 
-    tables = get_wiki_tables()
+    source = get_position_data()
 
-    role_table = find_role_table(tables)
+    required_columns = ["Name", "Role"]
 
-    role_data = make_position_data(role_table)
+    for column in required_columns:
+        if column not in source.columns:
+            raise ValueError(
+                f"외부 데이터에 {column} 열이 없습니다. "
+                f"현재 열: {list(source.columns)}"
+            )
 
-    aliases = {
-        "monkeyking": "wukong",
-    }
+    role_data = {}
 
-    positions_result = []
+    for _, row in source.iterrows():
+
+        name = normalize(row["Name"])
+        role_text = str(row["Role"])
+
+        if not name or name == "nan":
+            continue
+
+        positions = []
+
+        for role in role_text.split(","):
+
+            key = normalize(role)
+
+            for english, korean in POSITION_MAP.items():
+
+                if key == normalize(english):
+                    if korean not in positions:
+                        positions.append(korean)
+
+        role_data[name] = positions
+
+    result = []
     unmatched = []
 
     for _, champion in champions.iterrows():
@@ -215,7 +178,7 @@ def main():
             champion["champion_id"]
         )
 
-        lookup_id = aliases.get(
+        lookup_id = ALIASES.get(
             champion_id,
             champion_id
         )
@@ -223,16 +186,20 @@ def main():
         positions = role_data.get(lookup_id)
 
         if positions is None:
+
             unmatched.append(
                 champion["champion_id"]
             )
-            positions_result.append("")
+
+            result.append("")
+
         else:
-            positions_result.append(
+
+            result.append(
                 ";".join(positions)
             )
 
-    champions["position"] = positions_result
+    champions["position"] = result
 
     champions.to_csv(
         CSV_FILE,
@@ -240,12 +207,13 @@ def main():
         encoding="utf-8-sig"
     )
 
-    matched = len(champions) - len(unmatched)
-
     print("==============================")
     print("포지션 데이터 수집 완료")
     print(f"전체 챔피언: {len(champions)}명")
-    print(f"포지션 확인: {matched}명")
+    print(
+        f"포지션 확인: "
+        f"{len(champions) - len(unmatched)}명"
+    )
     print(f"확인 필요: {len(unmatched)}명")
 
     if unmatched:
