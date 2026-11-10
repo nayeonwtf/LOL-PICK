@@ -27,7 +27,11 @@ jobs:
       - name: 챔피언 데이터 수집
         run: |
           python data/collect_data.py
-
+          
+      - name: 포지션 데이터 수집
+        run: |
+          python data/add_positions.py
+          
       - name: CSV 파일 저장
         run: |
           git config user.name "github-actions[bot]"
