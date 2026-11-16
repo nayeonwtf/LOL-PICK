@@ -70,6 +70,35 @@ def get_display_value(value, default="정보 없음"):
     return str(value)
 
 
+def get_champion_image(champion, image_type="icon"):
+    """챔피언 이미지 주소 가져오기"""
+    if image_type == "splash":
+        image_url = champion.get("splash_url")
+    else:
+        image_url = champion.get("image_url")
+
+    if pd.notna(image_url) and str(image_url).strip():
+        return str(image_url)
+
+    # 이미지 주소가 없으면 챔피언 ID로 기본 주소 생성
+    champion_id = champion.get("champion_id")
+
+    if pd.notna(champion_id) and str(champion_id).strip():
+        if image_type == "splash":
+            return (
+                "https://ddragon.leagueoflegends.com/cdn/img/"
+                f"champion/splash/{champion_id}_0.jpg"
+            )
+
+        version = champion.get("version", "16.22.1")
+        return (
+            f"https://ddragon.leagueoflegends.com/cdn/"
+            f"{version}/img/champion/{champion_id}.png"
+        )
+
+    return None
+
+
 # -----------------------------
 # 데이터 요약
 # -----------------------------
@@ -130,12 +159,10 @@ if "random_champion" in st.session_state:
     st.markdown("# 🎉 빠밤!")
     st.markdown(f"## 오늘의 챔피언은 {champion['champion']}!")
 
-    image_url = champion.get("splash_url")
+    image_url = get_champion_image(champion, "splash")
 
-    if pd.notna(image_url) and image_url:
+    if image_url:
         st.image(image_url, use_container_width=True)
-    elif pd.notna(champion.get("image_url")):
-        st.image(champion["image_url"], width=180)
 
     if pd.notna(champion.get("title")):
         st.write(champion["title"])
@@ -234,7 +261,9 @@ if st.session_state.get("show_conditions", False):
 
     st.divider()
 
+    # -----------------------------
     # 추천 실행
+    # -----------------------------
     if st.button("✨ 조건에 맞는 챔피언 찾기!", use_container_width=True):
 
         # 1) 포지션 필터
@@ -302,8 +331,8 @@ if st.session_state.get("show_conditions", False):
                         "recommendation_score",
                         ascending=False
                     )
-                    results = scored.head(5)
 
+                    results = scored.head(5)
                     st.session_state["score_available"] = True
 
                 else:
@@ -311,6 +340,7 @@ if st.session_state.get("show_conditions", False):
                     results = filtered.sample(
                         min(5, len(filtered))
                     )
+
                     st.session_state["score_available"] = False
 
             else:
@@ -318,12 +348,17 @@ if st.session_state.get("show_conditions", False):
                 results = filtered.sample(
                     min(5, len(filtered))
                 )
+
                 st.session_state["score_available"] = False
+
+            # 이전에 선택했던 챔피언 초기화
+            st.session_state.pop("selected_recommended_champion", None)
 
             st.session_state["condition_results"] = results.to_dict("records")
             st.session_state["condition_selected_styles"] = selected_styles
             st.session_state["condition_selected_position"] = selected_position
             st.session_state["condition_selected_types"] = selected_types
+
 
     # -----------------------------
     # 추천 결과
@@ -337,16 +372,19 @@ if st.session_state.get("show_conditions", False):
 
         if st.session_state.get("score_available", False):
             st.success("선택한 플레이 스타일의 점수를 반영해서 추천했어!")
+
         elif st.session_state.get("condition_selected_styles"):
             st.warning(
                 "아직 선택한 스타일의 점수 데이터가 충분하지 않아. "
                 "포지션과 유형에 맞는 챔피언을 먼저 보여줄게!"
             )
+
         else:
             st.info("플레이 스타일을 선택하지 않아 조건에 맞는 챔피언을 무작위로 골랐어!")
 
         st.write(
-            f"**선택한 포지션:** {st.session_state['condition_selected_position']}"
+            f"**선택한 포지션:** "
+            f"{st.session_state['condition_selected_position']}"
         )
 
         if st.session_state["condition_selected_types"]:
@@ -365,34 +403,116 @@ if st.session_state.get("show_conditions", False):
 
         st.write("아래 후보 중 마음에 드는 챔피언을 살펴보자!")
 
+        # -----------------------------
+        # 후보별 이미지와 정보 표시
+        # -----------------------------
         for index, champion in enumerate(results, start=1):
 
             with st.container(border=True):
 
-                st.markdown(
-                    f"### {index}. {champion['champion']}"
-                )
+                image_col, info_col = st.columns([1, 3])
 
-                if pd.notna(champion.get("title")):
-                    st.write(champion["title"])
+                with image_col:
+                    image_url = get_champion_image(champion, "icon")
 
-                st.write(
-                    f"**포지션:** {get_display_value(champion.get('position'))}"
-                )
+                    if image_url:
+                        st.image(image_url, width=130)
+                    else:
+                        st.caption("이미지 없음")
 
-                st.write(
-                    f"**유형:** {get_display_value(champion.get('type'))}"
-                )
-
-                st.write(
-                    f"**난이도:** {get_display_value(champion.get('difficulty'))}"
-                )
-
-                if st.session_state.get("score_available", False):
-                    st.write(
-                        f"**스타일 점수:** "
-                        f"{champion['recommendation_score']:.2f}"
+                with info_col:
+                    st.markdown(
+                        f"### {index}. {champion['champion']}"
                     )
+
+                    if pd.notna(champion.get("title")):
+                        st.write(champion["title"])
+
+                    st.write(
+                        f"**포지션:** "
+                        f"{get_display_value(champion.get('position'))}"
+                    )
+
+                    st.write(
+                        f"**유형:** "
+                        f"{get_display_value(champion.get('type'))}"
+                    )
+
+                    st.write(
+                        f"**난이도:** "
+                        f"{get_display_value(champion.get('difficulty'))}"
+                    )
+
+                    if st.session_state.get("score_available", False):
+                        st.write(
+                            f"**스타일 점수:** "
+                            f"{champion['recommendation_score']:.2f}"
+                        )
+
+        # -----------------------------
+        # 추천 후보 중 한 명 선택
+        # -----------------------------
+        st.divider()
+        st.markdown("## ⭐ 마음에 드는 챔피언 선택하기")
+
+        champion_names = [
+            champion["champion"]
+            for champion in results
+        ]
+
+        selected_champion_name = st.selectbox(
+            "추천받은 챔피언 중 한 명을 골라 줘!",
+            champion_names,
+            key="selected_recommended_champion"
+        )
+
+        selected_champion = next(
+            champion
+            for champion in results
+            if champion["champion"] == selected_champion_name
+        )
+
+        st.markdown(f"## 🎉 선택한 챔피언은 {selected_champion_name}!")
+
+        # 선택한 챔피언의 큰 이미지
+        splash_url = get_champion_image(
+            selected_champion,
+            "splash"
+        )
+
+        if splash_url:
+            st.image(splash_url, use_container_width=True)
+        else:
+            st.warning("이 챔피언의 큰 이미지를 찾지 못했어.")
+
+        if pd.notna(selected_champion.get("title")):
+            st.subheader(selected_champion["title"])
+
+        st.write(
+            f"**포지션:** "
+            f"{get_display_value(selected_champion.get('position'))}"
+        )
+
+        st.write(
+            f"**유형:** "
+            f"{get_display_value(selected_champion.get('type'))}"
+        )
+
+        st.write(
+            f"**난이도:** "
+            f"{get_display_value(selected_champion.get('difficulty'))}"
+        )
+
+        if st.session_state.get("score_available", False):
+            st.write(
+                f"**스타일 점수:** "
+                f"{selected_champion['recommendation_score']:.2f}"
+            )
+
+        st.success(
+            f"{selected_champion_name} 선택 완료! "
+            "이제 협곡으로 출발해 보자!"
+        )
 
         st.caption(
             "※ 현재 추천은 보유한 챔피언 데이터에 기반한 초기 버전이야. "
