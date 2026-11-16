@@ -513,8 +513,3 @@ if st.session_state.get("show_conditions", False):
             f"{selected_champion_name} 선택 완료! "
             "이제 협곡으로 출발해 보자!"
         )
-
-        st.caption(
-            "※ 현재 추천은 보유한 챔피언 데이터에 기반한 초기 버전이야. "
-            "성향 점수는 추후 더 정확하게 채워 나갈 예정이야."
-        )
