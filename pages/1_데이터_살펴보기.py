@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("📊 챔피언 데이터 살펴보기")
-st.write("추천 모델을 만들기 전에 수집한 데이터의 상태와 특징을 확인해 보자!")
+
 
 
 # -----------------------------
@@ -90,10 +90,7 @@ st.dataframe(df.head(10), use_container_width=True)
 # 2. 결측값 확인
 # -----------------------------
 st.header("2. 결측값 확인")
-st.write(
-    "비어 있는 데이터가 얼마나 있는지 확인해 보자. "
-    "결측값이 많으면 추천 결과에 영향을 줄 수 있어."
-)
+
 
 missing = pd.DataFrame({
     "열 이름": df.columns,
@@ -117,7 +114,7 @@ if len(missing_columns) == 0:
 else:
     st.warning(
         f"결측값이 있는 열이 {len(missing_columns)}개 있어. "
-        "모델링 전에 처리 방법을 정해야 해."
+        
     )
 
 
@@ -228,7 +225,7 @@ if available_traits:
     )
 
     st.caption(
-        "평균과 최솟값, 최댓값은 숫자로 입력된 데이터만 계산했어."
+        "평균과 최솟값, 최댓값은 숫자로 입력된 데이터만 계산됨."
     )
 
 else:
@@ -240,10 +237,7 @@ else:
 # -----------------------------
 st.header("6. 데이터 탐색 결과 요약")
 
-st.write(
-    "아래 내용을 바탕으로 추천 모델 제작 전에 "
-    "어떤 데이터를 보완해야 하는지 생각해 보자."
-)
+
 
 if "position" in df.columns:
     position_missing = int(df["position"].isna().sum())
@@ -267,7 +261,3 @@ if available_traits:
         f"**{filled_trait_values:,} / {total_trait_values:,}개**"
     )
 
-st.info(
-    "다음 단계에서는 결측값과 플레이 스타일 점수를 정리하고, "
-    "추천 모델에 사용할 데이터를 준비할 거야."
-)
