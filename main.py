@@ -50,6 +50,27 @@ if "champion" not in df.columns:
 
 
 # -----------------------------
+# 데이터 정리 함수
+# -----------------------------
+def split_values(value):
+    """세미콜론으로 구분된 포지션·유형 데이터를 목록으로 변환"""
+    if pd.isna(value) or not str(value).strip():
+        return []
+
+    return [
+        item.strip()
+        for item in str(value).split(";")
+        if item.strip()
+    ]
+
+
+def get_display_value(value, default="정보 없음"):
+    if pd.isna(value) or str(value).strip() == "":
+        return default
+    return str(value)
+
+
+# -----------------------------
 # 데이터 요약
 # -----------------------------
 col1, col2, col3 = st.columns(3)
@@ -58,16 +79,16 @@ with col1:
     st.metric("전체 챔피언", f"{len(df)}명")
 
 with col2:
-    if "position" in df.columns:
-        st.metric("포지션 정보", "수집 완료")
-    else:
-        st.metric("포지션 정보", "확인 필요")
+    st.metric(
+        "포지션 정보",
+        "수집 완료" if "position" in df.columns else "확인 필요"
+    )
 
 with col3:
-    if "type" in df.columns:
-        st.metric("챔피언 유형", df["type"].nunique())
-    else:
-        st.metric("챔피언 유형", "확인 필요")
+    st.metric(
+        "챔피언 유형",
+        df["type"].nunique() if "type" in df.columns else "확인 필요"
+    )
 
 
 st.divider()
@@ -87,13 +108,16 @@ with left:
     if st.button("랜덤 챔피언 뽑기", use_container_width=True):
         champion = df.sample(1).iloc[0]
         st.session_state["random_champion"] = champion.to_dict()
+        st.session_state["show_conditions"] = False
+        st.session_state.pop("condition_results", None)
 
 with right:
     st.markdown("### 🔍 조건으로 찾기")
-    st.write("포지션과 플레이 스타일을 선택해서 찾아보자.")
+    st.write("원하는 포지션과 플레이 스타일을 선택해 보자.")
 
     if st.button("조건 선택하러 가기", use_container_width=True):
         st.session_state["show_conditions"] = True
+        st.session_state.pop("random_champion", None)
 
 
 # -----------------------------
@@ -130,9 +154,247 @@ if "random_champion" in st.session_state:
 
 
 # -----------------------------
-# 조건 선택 화면 (다음 단계에서 구현)
+# 조건 선택 화면
 # -----------------------------
 if st.session_state.get("show_conditions", False):
+
     st.divider()
-    st.markdown("## 🔍 조건으로 챔피언 찾기")
-    st.info("다음 단계에서 포지션, 챔피언 유형, 플레이 스타일 선택 기능을 추가할 거야!")
+    st.markdown("# 🔍 조건으로 챔피언 찾기")
+    st.write("원하는 조건을 선택하면 어울리는 챔피언을 찾아줄게!")
+
+    # 포지션 선택
+    st.markdown("### 1. 어떤 포지션을 플레이할까?")
+
+    positions = ["탑", "정글", "미드", "원딜", "서포터"]
+
+    selected_position = st.radio(
+        "포지션",
+        positions,
+        horizontal=True,
+        key="selected_position"
+    )
+
+    # 챔피언 유형 선택
+    st.markdown("### 2. 어떤 유형의 챔피언을 원해?")
+
+    all_types = set()
+
+    if "type" in df.columns:
+        for value in df["type"]:
+            all_types.update(split_values(value))
+
+    type_order = [
+        "전사", "탱커", "마법사",
+        "암살자", "원거리 딜러", "서포터"
+    ]
+
+    available_types = [
+        item for item in type_order if item in all_types
+    ]
+
+    available_types += sorted(
+        all_types - set(available_types)
+    )
+
+    selected_types = st.multiselect(
+        "챔피언 유형 (여러 개 선택 가능)",
+        available_types,
+        help="아무것도 선택하지 않으면 모든 유형을 대상으로 찾아."
+    )
+
+    # 플레이 스타일 선택
+    st.markdown("### 3. 어떤 플레이 스타일을 좋아해?")
+
+    style_options = [
+        "단단함",
+        "후반 성장형",
+        "강한 공격형",
+        "기동성",
+        "안정적인 플레이",
+        "팀원 지원형",
+        "CC기 중심"
+    ]
+
+    selected_styles = st.multiselect(
+        "마음에 드는 스타일을 모두 골라 줘!",
+        style_options,
+        help="여러 개를 골라도 괜찮아. 선택한 스타일을 고르게 반영할게."
+    )
+
+    # 스타일과 CSV 점수 열 연결
+    style_columns = {
+        "단단함": "defense",
+        "후반 성장형": "late_game",
+        "강한 공격형": "attack",
+        "기동성": "mobility",
+        "안정적인 플레이": "survivability",
+        "팀원 지원형": "team_support",
+        "CC기 중심": "cc_level"
+    }
+
+    st.divider()
+
+    # 추천 실행
+    if st.button("✨ 조건에 맞는 챔피언 찾기!", use_container_width=True):
+
+        # 1) 포지션 필터
+        filtered = df[
+            df["position"].apply(
+                lambda x: selected_position in split_values(x)
+            )
+        ].copy()
+
+        # 2) 유형 필터
+        if selected_types:
+            filtered = filtered[
+                filtered["type"].apply(
+                    lambda x: bool(
+                        set(split_values(x)) & set(selected_types)
+                    )
+                )
+            ]
+
+        if filtered.empty:
+            st.session_state.pop("condition_results", None)
+            st.error("조건에 맞는 챔피언을 찾지 못했어. 다른 조건으로 시도해 줘!")
+
+        else:
+            # 3) 선택한 스타일의 점수 계산
+            usable_columns = [
+                style_columns[style]
+                for style in selected_styles
+                if style_columns[style] in filtered.columns
+            ]
+
+            for column in usable_columns:
+                filtered[column] = pd.to_numeric(
+                    filtered[column],
+                    errors="coerce"
+                )
+
+            def calculate_score(row):
+                scores = []
+
+                for style in selected_styles:
+                    column = style_columns[style]
+
+                    if column in row.index and pd.notna(row[column]):
+                        scores.append(float(row[column]))
+
+                if scores:
+                    return sum(scores) / len(scores)
+
+                return None
+
+            if selected_styles:
+                filtered["recommendation_score"] = filtered.apply(
+                    calculate_score,
+                    axis=1
+                )
+
+                # 점수가 있는 챔피언을 우선 추천
+                scored = filtered[
+                    filtered["recommendation_score"].notna()
+                ].copy()
+
+                if not scored.empty:
+                    scored = scored.sort_values(
+                        "recommendation_score",
+                        ascending=False
+                    )
+                    results = scored.head(5)
+
+                    st.session_state["score_available"] = True
+
+                else:
+                    # 아직 성향 점수가 없으면 포지션·유형에 맞는 후보 중 무작위
+                    results = filtered.sample(
+                        min(5, len(filtered))
+                    )
+                    st.session_state["score_available"] = False
+
+            else:
+                # 스타일을 선택하지 않았다면 조건에 맞는 후보 중 무작위
+                results = filtered.sample(
+                    min(5, len(filtered))
+                )
+                st.session_state["score_available"] = False
+
+            st.session_state["condition_results"] = results.to_dict("records")
+            st.session_state["condition_selected_styles"] = selected_styles
+            st.session_state["condition_selected_position"] = selected_position
+            st.session_state["condition_selected_types"] = selected_types
+
+    # -----------------------------
+    # 추천 결과
+    # -----------------------------
+    if "condition_results" in st.session_state:
+
+        results = st.session_state["condition_results"]
+
+        st.divider()
+        st.markdown("# 🎉 추천 챔피언!")
+
+        if st.session_state.get("score_available", False):
+            st.success("선택한 플레이 스타일의 점수를 반영해서 추천했어!")
+        elif st.session_state.get("condition_selected_styles"):
+            st.warning(
+                "아직 선택한 스타일의 점수 데이터가 충분하지 않아. "
+                "포지션과 유형에 맞는 챔피언을 먼저 보여줄게!"
+            )
+        else:
+            st.info("플레이 스타일을 선택하지 않아 조건에 맞는 챔피언을 무작위로 골랐어!")
+
+        st.write(
+            f"**선택한 포지션:** {st.session_state['condition_selected_position']}"
+        )
+
+        if st.session_state["condition_selected_types"]:
+            st.write(
+                "**선택한 유형:** "
+                + ", ".join(st.session_state["condition_selected_types"])
+            )
+        else:
+            st.write("**선택한 유형:** 전체 유형")
+
+        if st.session_state["condition_selected_styles"]:
+            st.write(
+                "**선택한 스타일:** "
+                + ", ".join(st.session_state["condition_selected_styles"])
+            )
+
+        st.write("아래 후보 중 마음에 드는 챔피언을 살펴보자!")
+
+        for index, champion in enumerate(results, start=1):
+
+            with st.container(border=True):
+
+                st.markdown(
+                    f"### {index}. {champion['champion']}"
+                )
+
+                if pd.notna(champion.get("title")):
+                    st.write(champion["title"])
+
+                st.write(
+                    f"**포지션:** {get_display_value(champion.get('position'))}"
+                )
+
+                st.write(
+                    f"**유형:** {get_display_value(champion.get('type'))}"
+                )
+
+                st.write(
+                    f"**난이도:** {get_display_value(champion.get('difficulty'))}"
+                )
+
+                if st.session_state.get("score_available", False):
+                    st.write(
+                        f"**스타일 점수:** "
+                        f"{champion['recommendation_score']:.2f}"
+                    )
+
+        st.caption(
+            "※ 현재 추천은 보유한 챔피언 데이터에 기반한 초기 버전이야. "
+            "성향 점수는 추후 더 정확하게 채워 나갈 예정이야."
+        )
